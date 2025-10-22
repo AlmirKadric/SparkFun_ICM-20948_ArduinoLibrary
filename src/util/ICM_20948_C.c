@@ -1325,107 +1325,95 @@ ICM_20948_Status_e ICM_20948_firmware_load(ICM_20948_Device_t *pdev)
 */
 ICM_20948_Status_e inv_icm20948_firmware_load(ICM_20948_Device_t *pdev, const unsigned char *data_start, unsigned short size_start, unsigned short load_addr)
 {
-  int write_size;
-  ICM_20948_Status_e result = ICM_20948_Stat_Ok;
-  unsigned short memaddr;
-  const unsigned char *data;
-  unsigned short size;
-  unsigned char data_cmp[INV_MAX_SERIAL_READ];
-  int flag = 0;
+	ICM_20948_Status_e result = ICM_20948_Stat_Ok;
 
-  if (pdev->_dmp_firmware_available == false)
-    return ICM_20948_Stat_DMPNotSupported;
-
-  if (pdev->_firmware_loaded)
-    return ICM_20948_Stat_Ok; // Bail with no error if firmware is already loaded
-
-  result = ICM_20948_sleep(pdev, false); // Make sure chip is awake
-  if (result != ICM_20948_Stat_Ok)
-  {
+	// Make sure the DMP feature is enabled
+  if (pdev->_dmp_firmware_available == false) {
+		return ICM_20948_Stat_DMPNotSupported;
+	}
+	// Bail with no error if firmware is already loaded
+  if (pdev->_firmware_loaded) {
+		return ICM_20948_Stat_Ok;
+	}
+	// Make sure chip is awake
+  result = ICM_20948_sleep(pdev, false);
+  if (result != ICM_20948_Stat_Ok) {
+    return result;
+  }
+	// Make sure chip is not in low power state
+  result = ICM_20948_low_power(pdev, false);
+  if (result != ICM_20948_Stat_Ok) {
     return result;
   }
 
-  result = ICM_20948_low_power(pdev, false); // Make sure chip is not in low power state
-  if (result != ICM_20948_Stat_Ok)
-  {
-    return result;
-  }
 
-  // Write DMP memory
+	// Write & Verify DMP memory
+	unsigned short dmpAddr = load_addr;
+	const unsigned char *pData = data_start;
+	const unsigned char *pEnd = data_start + size_start;
 
-  data = data_start;
-  size = size_start;
-  memaddr = load_addr;
+	unsigned char cData[INV_MAX_SERIAL_READ];
+
   #ifdef ICM_20948_USE_PROGMEM_FOR_DMP
   unsigned char data_not_pg[INV_MAX_SERIAL_READ]; // Suggested by @HyperKokichi in Issue #63
   #endif
-  while (size > 0)
-  {
-    //write_size = min(size, INV_MAX_SERIAL_WRITE); // Write in chunks of INV_MAX_SERIAL_WRITE
-    if (size <= INV_MAX_SERIAL_WRITE) // Write in chunks of INV_MAX_SERIAL_WRITE
-      write_size = size;
-    else
-      write_size = INV_MAX_SERIAL_WRITE;
-    if ((memaddr & 0xff) + write_size > 0x100)
-    {
-      // Moved across a bank
-      write_size = (memaddr & 0xff) + write_size - 0x100;
-    }
-#ifdef ICM_20948_USE_PROGMEM_FOR_DMP
-    memcpy_P(data_not_pg, data, write_size);  // Suggested by @HyperKokichi in Issue #63
-    result = inv_icm20948_write_mems(pdev, memaddr, write_size, (unsigned char *)data_not_pg);
-#else
-    result = inv_icm20948_write_mems(pdev, memaddr, write_size, (unsigned char *)data);
-#endif
-    if (result != ICM_20948_Stat_Ok)
-      return result;
-    data += write_size;
-    size -= write_size;
-    memaddr += write_size;
-  }
 
-  // Verify DMP memory
+	unsigned int errorCount = 0;
+	while (pData < pEnd) {
+		unsigned int wLength = INV_MAX_SERIAL_READ;
+		if (pData + wLength >= pEnd) {
+			// Reached the end of the buffer
+			wLength = pEnd - pData;
+		}
+		if ((dmpAddr & 0xff) + wLength > 0x100) {
+			// Moved across a bank
+			wLength = 0x100 - (dmpAddr & 0xff);
+		}
 
-  data = data_start;
-  size = size_start;
-  memaddr = load_addr;
-  while (size > 0)
-  {
-    //write_size = min(size, INV_MAX_SERIAL_READ); // Read in chunks of INV_MAX_SERIAL_READ
-    if (size <= INV_MAX_SERIAL_READ) // Read in chunks of INV_MAX_SERIAL_READ
-      write_size = size;
-    else
-      write_size = INV_MAX_SERIAL_READ;
-    if ((memaddr & 0xff) + write_size > 0x100)
-    {
-      // Moved across a bank
-      write_size = (memaddr & 0xff) + write_size - 0x100;
-    }
-    result = inv_icm20948_read_mems(pdev, memaddr, write_size, data_cmp);
-    if (result != ICM_20948_Stat_Ok)
-      flag++;                               // Error, DMP not written correctly
-#ifdef ICM_20948_USE_PROGMEM_FOR_DMP
-    memcpy_P(data_not_pg, data, write_size);  // Suggested by @HyperKokichi in Issue #63
-    if (memcmp(data_cmp, data_not_pg, write_size))
-#else
-    if (memcmp(data_cmp, data, write_size)) // Compare the data
-#endif
-      return ICM_20948_Stat_DMPVerifyFail;
-    data += write_size;
-    size -= write_size;
-    memaddr += write_size;
-  }
+		// Make firmware loading more robust by using a retry loop
+		for (int i = 0; i < 20; i += 1) {
+			delay(50 * i);
 
-  //Enable LP_EN since we disabled it at begining of this function.
-  result = ICM_20948_low_power(pdev, true); // Put chip into low power state
-  if (result != ICM_20948_Stat_Ok)
-    return result;
+			result = ICM_20948_Stat_Ok;
 
-  if (!flag)
-  {
-    //Serial.println("DMP Firmware was updated successfully..");
-    pdev->_firmware_loaded = true;
-  }
+			// Write data to memory bank
+			#ifdef ICM_20948_USE_PROGMEM_FOR_DMP
+					memcpy_P(data_not_pg, pData, wLength);  // Suggested by @HyperKokichi in Issue #63
+					result = inv_icm20948_write_mems(pdev, dmpAddr, wLength, data_not_pg);
+			#else
+					result = inv_icm20948_write_mems(pdev, dmpAddr, wLength, pData);
+			#endif
+			if (result != ICM_20948_Stat_Ok) {
+				errorCount += 1;
+				continue;
+			}
+
+			// Read data from memory bank
+			result = inv_icm20948_read_mems(pdev, dmpAddr, wLength, cData);
+			if (result != ICM_20948_Stat_Ok) {
+				errorCount += 1;
+				continue;
+			}
+
+			// Verify data is correct
+			if (memcmp(pData, cData, wLength) != 0) {
+				result = ICM_20948_Stat_DMPVerifyFail;
+				errorCount += 1;
+				continue;
+			}
+
+			break;
+		}
+		if (result != ICM_20948_Stat_Ok) {
+			return result;
+		}
+
+		dmpAddr += wLength;
+		pData += wLength;
+	}
+
+	// Mark firmware as loaded
+	pdev->_firmware_loaded = true;
 
   return result;
 }
@@ -1980,7 +1968,7 @@ ICM_20948_Status_e inv_icm20948_enable_dmp_sensor_int(ICM_20948_Device_t *pdev, 
   data_intr_ctl[0] = (unsigned char)(delta >> 8);
   data_intr_ctl[1] = (unsigned char)(delta & 0xff);
   pdev->_dataIntrCtl = delta; // Diagnostics
-  
+
   // Write the interrupt control bits into memory address DATA_INTR_CTL
   result = inv_icm20948_write_mems(pdev, DATA_INTR_CTL, 2, (const unsigned char *)&data_intr_ctl);
 

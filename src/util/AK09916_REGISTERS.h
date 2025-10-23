@@ -5,11 +5,28 @@
 
 typedef enum
 {
+  // Addresses 00h to 18h, 30h to 32h are compliant with automatic increment
+  // function of serial interface respectively. In other modes, read data is not
+  // correct. When the address is in 00h to 18h, the address is incremented
+  // 00h -> 01h -> 02h -> 03h -> 10h -> 11h -> ... -> 18h, and the address goes
+  // back to 00h after 18h. When the address is in 30h to 32h, the address goes
+  // back to 30h after 32h.
+
+  // NOTE: the DMP expects to receive 2 bytes of header (contents don't matter
+  // as far as I can see) and 3 words of data (6 bytes) in big endian format.
+  // Further to this the DMP expects this data to be stored entirely by the
+  // I2C Slave 0 peripheral. i.e. we cannot split the data up over multiple
+  // I2C slave reads. Also, the Magnetometer expects for the ST2 register to
+  // be read to confirm the data cycle as complete and to proceed with the
+  // next reading. This is why we need to read 10 bytes of data starting 2
+  // bytes before the HXL data register (RSV2).
+
+  // Data Register Group
   AK09916_REG_WIA1 = 0x00,
   AK09916_REG_WIA2,
   AK09916_REG_RSV1,
-  AK09916_REG_RSV2, // Reserved register. We start reading here when using the DMP. Secret sauce...
-  // discontinuity - containing another nine reserved registers? Secret sauce...
+  AK09916_REG_RSV2,
+  // auto-inremented discontinuity
   AK09916_REG_ST1 = 0x10,
   AK09916_REG_HXL,
   AK09916_REG_HXH,
@@ -17,10 +34,12 @@ typedef enum
   AK09916_REG_HYH,
   AK09916_REG_HZL,
   AK09916_REG_HZH,
-  // discontinuity
-  AK09916_REG_ST2 = 0x18,
-  // discontinuity
-  AK09916_REG_CNTL2 = 0x31,
+  AK09916_REG_TMPS, // Dummy
+  AK09916_REG_ST2,
+
+  // Control Register Group
+  AK09916_REG_CNTL1 = 0x30, // Dummy
+  AK09916_REG_CNTL2,
   AK09916_REG_CNTL3,
 } AK09916_Reg_Addr_e;
 

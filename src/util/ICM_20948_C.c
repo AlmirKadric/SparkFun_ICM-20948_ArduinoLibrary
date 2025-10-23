@@ -1060,7 +1060,7 @@ ICM_20948_Status_e ICM_20948_get_agmt(ICM_20948_Device_t *pdev, ICM_20948_AGMT_t
   }
 
   ICM_20948_Status_e retval = ICM_20948_Stat_Ok;
-  const uint8_t numbytes = 14 + 9; //Read Accel, gyro, temp, and 9 bytes of mag
+  const uint8_t numbytes = 14 + 10; //Read Accel, gyro, temp, and 10 bytes of mag
   uint8_t buff[numbytes];
 
   // Get readings
@@ -1078,9 +1078,9 @@ ICM_20948_Status_e ICM_20948_get_agmt(ICM_20948_Device_t *pdev, ICM_20948_AGMT_t
   pagmt->tmp.val = ((buff[12] << 8) | (buff[13] & 0xFF));
 
   pagmt->magStat1 = buff[14];
-  pagmt->mag.axes.x = ((buff[16] << 8) | (buff[15] & 0xFF)); //Mag data is read little endian
-  pagmt->mag.axes.y = ((buff[18] << 8) | (buff[17] & 0xFF));
-  pagmt->mag.axes.z = ((buff[20] << 8) | (buff[19] & 0xFF));
+  pagmt->mag.axes.x = ((buff[16] << 8) | (buff[17] & 0xFF));
+  pagmt->mag.axes.y = ((buff[18] << 8) | (buff[19] & 0xFF));
+  pagmt->mag.axes.z = ((buff[20] << 8) | (buff[21] & 0xFF));
   pagmt->magStat2 = buff[22];
 
   // Get settings to be able to compute scaled values

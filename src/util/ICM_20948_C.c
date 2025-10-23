@@ -1325,95 +1325,95 @@ ICM_20948_Status_e ICM_20948_firmware_load(ICM_20948_Device_t *pdev)
 */
 ICM_20948_Status_e inv_icm20948_firmware_load(ICM_20948_Device_t *pdev, const unsigned char *data_start, unsigned short size_start, unsigned short load_addr)
 {
-	ICM_20948_Status_e result = ICM_20948_Stat_Ok;
+  ICM_20948_Status_e result = ICM_20948_Stat_Ok;
 
-	// Make sure the DMP feature is enabled
+  // Make sure the DMP feature is enabled
   if (pdev->_dmp_firmware_available == false) {
-		return ICM_20948_Stat_DMPNotSupported;
-	}
-	// Bail with no error if firmware is already loaded
+    return ICM_20948_Stat_DMPNotSupported;
+  }
+  // Bail with no error if firmware is already loaded
   if (pdev->_firmware_loaded) {
-		return ICM_20948_Stat_Ok;
-	}
-	// Make sure chip is awake
+    return ICM_20948_Stat_Ok;
+  }
+  // Make sure chip is awake
   result = ICM_20948_sleep(pdev, false);
   if (result != ICM_20948_Stat_Ok) {
     return result;
   }
-	// Make sure chip is not in low power state
+  // Make sure chip is not in low power state
   result = ICM_20948_low_power(pdev, false);
   if (result != ICM_20948_Stat_Ok) {
     return result;
   }
 
 
-	// Write & Verify DMP memory
-	unsigned short dmpAddr = load_addr;
-	const unsigned char *pData = data_start;
-	const unsigned char *pEnd = data_start + size_start;
+  // Write & Verify DMP memory
+  unsigned short dmpAddr = load_addr;
+  const unsigned char *pData = data_start;
+  const unsigned char *pEnd = data_start + size_start;
 
-	unsigned char cData[INV_MAX_SERIAL_READ];
+  unsigned char cData[INV_MAX_SERIAL_READ];
 
   #ifdef ICM_20948_USE_PROGMEM_FOR_DMP
   unsigned char data_not_pg[INV_MAX_SERIAL_READ]; // Suggested by @HyperKokichi in Issue #63
   #endif
 
-	unsigned int errorCount = 0;
-	while (pData < pEnd) {
-		unsigned int wLength = INV_MAX_SERIAL_READ;
-		if (pData + wLength >= pEnd) {
-			// Reached the end of the buffer
-			wLength = pEnd - pData;
-		}
-		if ((dmpAddr & 0xff) + wLength > 0x100) {
-			// Moved across a bank
-			wLength = 0x100 - (dmpAddr & 0xff);
-		}
+  unsigned int errorCount = 0;
+  while (pData < pEnd) {
+    unsigned int wLength = INV_MAX_SERIAL_READ;
+    if (pData + wLength >= pEnd) {
+      // Reached the end of the buffer
+      wLength = pEnd - pData;
+    }
+    if ((dmpAddr & 0xff) + wLength > 0x100) {
+      // Moved across a bank
+      wLength = 0x100 - (dmpAddr & 0xff);
+    }
 
-		// Make firmware loading more robust by using a retry loop
-		for (int i = 0; i < 20; i += 1) {
-			delay(50 * i);
+    // Make firmware loading more robust by using a retry loop
+    for (int i = 0; i < 20; i += 1) {
+      delay(50 * i);
 
-			result = ICM_20948_Stat_Ok;
+      result = ICM_20948_Stat_Ok;
 
-			// Write data to memory bank
-			#ifdef ICM_20948_USE_PROGMEM_FOR_DMP
-					memcpy_P(data_not_pg, pData, wLength);  // Suggested by @HyperKokichi in Issue #63
-					result = inv_icm20948_write_mems(pdev, dmpAddr, wLength, data_not_pg);
-			#else
-					result = inv_icm20948_write_mems(pdev, dmpAddr, wLength, pData);
-			#endif
-			if (result != ICM_20948_Stat_Ok) {
-				errorCount += 1;
-				continue;
-			}
+      // Write data to memory bank
+      #ifdef ICM_20948_USE_PROGMEM_FOR_DMP
+          memcpy_P(data_not_pg, pData, wLength);  // Suggested by @HyperKokichi in Issue #63
+          result = inv_icm20948_write_mems(pdev, dmpAddr, wLength, data_not_pg);
+      #else
+          result = inv_icm20948_write_mems(pdev, dmpAddr, wLength, pData);
+      #endif
+      if (result != ICM_20948_Stat_Ok) {
+        errorCount += 1;
+        continue;
+      }
 
-			// Read data from memory bank
-			result = inv_icm20948_read_mems(pdev, dmpAddr, wLength, cData);
-			if (result != ICM_20948_Stat_Ok) {
-				errorCount += 1;
-				continue;
-			}
+      // Read data from memory bank
+      result = inv_icm20948_read_mems(pdev, dmpAddr, wLength, cData);
+      if (result != ICM_20948_Stat_Ok) {
+        errorCount += 1;
+        continue;
+      }
 
-			// Verify data is correct
-			if (memcmp(pData, cData, wLength) != 0) {
-				result = ICM_20948_Stat_DMPVerifyFail;
-				errorCount += 1;
-				continue;
-			}
+      // Verify data is correct
+      if (memcmp(pData, cData, wLength) != 0) {
+        result = ICM_20948_Stat_DMPVerifyFail;
+        errorCount += 1;
+        continue;
+      }
 
-			break;
-		}
-		if (result != ICM_20948_Stat_Ok) {
-			return result;
-		}
+      break;
+    }
+    if (result != ICM_20948_Stat_Ok) {
+      return result;
+    }
 
-		dmpAddr += wLength;
-		pData += wLength;
-	}
+    dmpAddr += wLength;
+    pData += wLength;
+  }
 
-	// Mark firmware as loaded
-	pdev->_firmware_loaded = true;
+  // Mark firmware as loaded
+  pdev->_firmware_loaded = true;
 
   return result;
 }
